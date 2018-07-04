@@ -1,9 +1,12 @@
+#define _BSD_SOURCE // To remove usleep compiler moans
+
 /* NOTE: No error checking has been performed regarding stdlib functions. */
 #include <stdio.h>
 #include <unistd.h>
 #include <assert.h>
 
 #include "hsm.h"
+#include "trafficlightcontroller.h"
 
 HandleStatus on(Event event);
 HandleStatus off(Event event);
@@ -29,13 +32,16 @@ void exitAmber(void);
 void exitRedAmber(void);
 void exitGreen(void);
 
-State* ON;
-State* OFF;
-State* ERROR;
-State* RED;
-State* AMBER;
-State* RED_AMBER;
-State* GREEN;
+static State* ON;
+static State* OFF;
+static State* ERROR;
+static State* RED;
+static State* AMBER;
+static State* RED_AMBER;
+static State* GREEN;
+
+static HSM* hsm = NULL;
+static bool running = false;
 
 enum {
     EVENT_CHANGE_LIGHTS = 0,
@@ -54,44 +60,44 @@ int main(int argc, const char* argv[]) {
                            &redAmber);
     GREEN = state_init("GREEN", ON, &enterGreen, &exitGreen, &green);
 
-    HSM* hsm = hsm_init(OFF);
+    hsm = hsm_init(OFF);
 
-    hsm_addTransition(hsm, OFF, EVENT_TURN_ON, RED);
-    hsm_addTransition(hsm, ON, EVENT_TURN_OFF, OFF);
-    hsm_addTransition(hsm, ON, EVENT_ERROR, ERROR);
-    hsm_addTransition(hsm, ERROR, EVENT_TURN_OFF, OFF);
-    hsm_addTransition(hsm, RED, EVENT_CHANGE_LIGHTS, RED_AMBER);
-    hsm_addTransition(hsm, RED_AMBER, EVENT_CHANGE_LIGHTS, GREEN);
-    hsm_addTransition(hsm, GREEN, EVENT_CHANGE_LIGHTS, AMBER);
-    hsm_addTransition(hsm, AMBER, EVENT_CHANGE_LIGHTS, RED);
+    hsm_addTransition(hsm, (Transition){.from=OFF, .event=EVENT_TURN_ON, 
+                                        .to=RED});
+    hsm_addTransition(hsm, (Transition){.from=ON, .event=EVENT_TURN_OFF, 
+                                        .to=OFF});
+    hsm_addTransition(hsm, (Transition){.from=ON, .event=EVENT_ERROR, 
+                                        .to=ERROR});
+    hsm_addTransition(hsm, (Transition){.from=ERROR, .event=EVENT_TURN_OFF, 
+                                        .to=OFF});
+    hsm_addTransition(hsm, (Transition){.from=RED, .event=EVENT_CHANGE_LIGHTS, 
+                                        .to=RED_AMBER});
+    hsm_addTransition(hsm, (Transition){.from=RED_AMBER, 
+                                        .event=EVENT_CHANGE_LIGHTS, .to=GREEN});
+    hsm_addTransition(hsm, (Transition){.from=GREEN, .event=EVENT_CHANGE_LIGHTS, 
+                                        .to=AMBER});
+    hsm_addTransition(hsm, (Transition){.from=AMBER, .event=EVENT_CHANGE_LIGHTS, 
+                                        .to=RED});
 
     hsm_handle(hsm, EVENT_TURN_ON);
 
-    for (int i = 0 ; i < 5; i++) {
+    while (running) {
         hsm_handle(hsm, EVENT_CHANGE_LIGHTS);
-        // sleep(1);
+        usleep(500000);
     }
 
-    hsm_handle(hsm, EVENT_ERROR);
-    hsm_handle(hsm, EVENT_CHANGE_LIGHTS);
-
-    hsm_destroy(hsm);
-    state_destroy(ON);
-    state_destroy(OFF);
-    state_destroy(ERROR);
-    state_destroy(RED);
-    state_destroy(RED_AMBER);
-    state_destroy(AMBER);
-    state_destroy(GREEN);
-    
     return 0;
+}
+
+static void switchAllLightsOff() {
+    switchRedLightOff();
+    switchAmberLightOff();
+    switchGreenLightOff();
 }
 
 HandleStatus on(Event event) {
     HandleStatus result;
-
-    puts("on");
-
+    
     switch (event) {
         case EVENT_CHANGE_LIGHTS:
         case EVENT_TURN_OFF: result = HANDLED; break;
@@ -104,8 +110,6 @@ HandleStatus on(Event event) {
 HandleStatus off(Event event) {
     HandleStatus result;
 
-    puts("off");
-
     switch (event) {
         case EVENT_CHANGE_LIGHTS:
         case EVENT_TURN_ON: result = HANDLED; break;
@@ -117,32 +121,70 @@ HandleStatus off(Event event) {
 
 HandleStatus error(Event event) {
     puts("error");
+    fflush(stdout);
 
     return HANDLED;
 }
 
 HandleStatus red(Event event) {
-    puts("red");
+    HandleStatus result;
 
-    return NOT_HANDLED;
+    switchAllLightsOff();
+    switchRedLightOn();
+
+    switch (event) {
+        case EVENT_CHANGE_LIGHTS:
+        case EVENT_TURN_ON: result = HANDLED; break;
+        default: result = NOT_HANDLED; break;
+    }
+
+    return result;
 }
 
 HandleStatus amber(Event event) {
-    puts("amber");
+    HandleStatus result;
 
-    return HANDLED;
+    switchAllLightsOff(); // QWFX
+    switchAmberLightOn();
+
+    switch (event) {
+        case EVENT_CHANGE_LIGHTS:
+        case EVENT_TURN_ON: result = HANDLED; break;
+        default: result = NOT_HANDLED; break;
+    }
+
+    return result;
 }
 
 HandleStatus redAmber(Event event) {
-    puts("red amber");
+    HandleStatus result;
 
-    return NOT_HANDLED;
+    switchAllLightsOff();
+    switchRedLightOn();
+    switchAmberLightOn();
+
+    switch (event) {
+        case EVENT_CHANGE_LIGHTS:
+        case EVENT_TURN_ON: result = HANDLED; break;
+        default: result = NOT_HANDLED; break;
+    }
+
+    return result;
 }
 
 HandleStatus green(Event event) {
-    puts("green");
+    HandleStatus result;
 
-    return NOT_HANDLED;
+    switchAllLightsOff(); // QWFX
+    switchGreenLightOn();
+
+    switch (event) {
+        case EVENT_CHANGE_LIGHTS:
+        case EVENT_TURN_ON: result = HANDLED; break;
+        default: result = NOT_HANDLED; break;
+    }
+
+    return result;
 }
 
 void enterOn(void) {
@@ -158,11 +200,15 @@ void enterError(void) {
 }
 
 void enterRed(void) {
-    // puts("enter red");
+    // puts("ENTER RED");
+    // fflush(stdout);
+    // switchAmberLightOff();
 }
 
 void enterAmber(void) {
-    // puts("enter amber");
+    // puts("ENTER AMBER");
+    // fflush(stdout);
+    // switchGreenLightOff();
 }
 
 void enterRedAmber(void) {
@@ -170,7 +216,10 @@ void enterRedAmber(void) {
 }
 
 void enterGreen(void) {
-    // puts("enter green");
+    // puts("ENTER GREEN");
+    // fflush(stdout);
+    // switchRedLightOff();
+    // switchAmberLightOff();
 }
 
 void exitOn(void) {

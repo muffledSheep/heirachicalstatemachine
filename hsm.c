@@ -4,14 +4,6 @@
 
 #include "hsm.h"
 
-typedef struct Transition Transition;
-
-struct Transition {
-    State* from;
-    State* to;
-    Event event;
-};
-
 struct HSM {
     State* state;
     Transition* transitions; // QWFX
@@ -39,9 +31,9 @@ void hsm_handle(HSM* hsm, Event event) {
     State* currState = hsm->state;
 
     while ((currState->handle(event) == NOT_HANDLED) && currState->parent) {
-            currState = currState->parent;
+        currState = currState->parent;
     }
-
+    
     if ((trans = transLookup(hsm, currState, event))) {
         exitSuperStates(hsm->state);
 
@@ -95,15 +87,14 @@ static Transition* transLookup(HSM* hsm, State* currState, Event event) {
     return trans;
 }
 
-void hsm_addTransition(HSM* hsm, State* from, Event event, State* to) {
+void hsm_addTransition(HSM* hsm, Transition transition) {
     if (hsm->transitionsLen == hsm->transitionsSize) {
         hsm->transitionsSize *= 2;
         hsm->transitions = realloc(hsm->transitions, 
             sizeof(*(hsm->transitions)) * hsm->transitionsSize);
     }
 
-    hsm->transitions[hsm->transitionsLen++] = (Transition){.from=from, 
-        .to=to, .event=event};
+    hsm->transitions[hsm->transitionsLen++] = transition;
 }
 
 HSM* hsm_init(State* initState) {
@@ -145,4 +136,6 @@ State* state_init(const char* name, State* parent, void (*onEnter)(void),
 
 void state_destroy(State* state) {
     free(state);
+
+    state = NULL;
 }
