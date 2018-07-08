@@ -22,25 +22,35 @@ struct State {
 
 static void enterSubStatesFromRoot(State* state);
 static void exitSuperStates(State* state);
-static Transition* transLookup(HSM* hsm, State* currState, Event event);
+static Transition** transLookup(HSM* hsm, State* currState, Event event, 
+                                size_t* transCount);
 
 static _Atomic long statesCreated = 0;
 
 void hsm_handle(HSM* hsm, Event event) {
-    Transition* trans = NULL;
+    Transition** transitions = NULL;
+    size_t transCount = 0;
     State* currState = hsm->state;
 
     while ((currState->handle(event) == NOT_HANDLED) && currState->parent) {
         currState = currState->parent;
     }
     
-    if ((trans = transLookup(hsm, currState, event))) {
-        exitSuperStates(hsm->state);
+    if ((transitions = transLookup(hsm, currState, event, &transCount))) {
+        for (size_t i = 0; i < transCount; i++) {
+            if ((transitions[i]->guard == NULL) || transitions[i]->guard()) {
+                exitSuperStates(hsm->state);
 
-        hsm->state = trans->to;
+                hsm->state = transitions[i]->to;
 
-        enterSubStatesFromRoot(hsm->state);
+                enterSubStatesFromRoot(hsm->state);
+
+                break;
+            }
+        }
     }
+
+    free(transitions);
 }
 
 static void exitSuperStates(State* state) {
@@ -74,17 +84,25 @@ static void enterSubStatesFromRoot(State* state) {
     free(states);
 }
 
-static Transition* transLookup(HSM* hsm, State* currState, Event event) {
-    Transition* trans = NULL;
+static Transition** transLookup(HSM* hsm, State* currState, Event event, 
+                                size_t* transCount) {
+    size_t cap = 10;
+    Transition** transitions = malloc(sizeof(Transition*) * cap);
 
-    for (size_t i = 0; !trans && (i < hsm->transitionsLen); i++) {
+    for (size_t i = 0; i < hsm->transitionsLen; i++) {
         if (state_equals(currState, hsm->transitions[i].from) && 
             (hsm->transitions[i].event == event)) {
-            trans = &(hsm->transitions[i]);
+
+            if (*transCount == cap) {
+                cap *= 2;
+                transitions = realloc(transitions, sizeof(Transition*) * cap);
+            }
+
+            transitions[(*transCount)++] = &(hsm->transitions[i]);
         }
     }
 
-    return trans;
+    return transitions;
 }
 
 void hsm_addTransition(HSM* hsm, Transition transition) {
