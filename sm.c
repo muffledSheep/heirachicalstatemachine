@@ -29,27 +29,26 @@ struct SM {
     bool ignore_unhandled_events;
 };
 
-enum {
-    NO_PARENT       = 0,
-    DUMMY_STATE_HDL = 0
-};
-
 static bool valid_transition(SM*, SMTransition*);
 static bool valid_state_hdl(SM*, SMStateHdl);
 static SMEventHandlerStatus dummy_handler(int, void*);
 static int dummy_on_enter(void);
 static int dummy_on_exit(void);
-static int enter_state(SM*, SMState*);
-static int exit_state(SM*, SMState*);
-static size_t ancestor_count(SM*, SMState*);
-static SMState* get_ancestor(SM*, SMState*, size_t);
+static int enter_state(SM*, SMStateHdl);
+static int exit_state(SM*, SMStateHdl);
+static size_t ancestor_count(SM*, SMStateHdl);
+static SMState* get_ancestor(SM*, SMStateHdl, size_t);
 static SMTransition* lookup_trans(SM*, SMStateHdl, int);
 
-SM* sm_create(void) {
-    return malloc(sizeof(SM));
-}    
+SMStatus sm_create(SM** out, SMConfig cfg) {
+    SM* sm = malloc(sizeof(*sm));
 
-SMStatus sm_init(SM* sm, SMConfig cfg) {
+    if (sm == NULL) {
+        return SM_ERROR;
+    }
+
+    enum { DUMMY_STATE_HDL = 0 };
+
     sm->ignore_unhandled_events = cfg.ignore_unhandled_events;
     sm->states_size = cfg.init_states_size;
     sm->states_len = 0;
@@ -72,10 +71,20 @@ SMStatus sm_init(SM* sm, SMConfig cfg) {
     }
 
     SMStateHdl dummy_hdl = DUMMY_STATE_HDL;
-    SMState dummy_state = {.handler = &dummy_handler, .parent_hdl = NO_PARENT, 
-                           .on_enter = NULL, .on_exit = NULL};
+    SMState dummy_state = {.handler = &dummy_handler, 
+        .parent_hdl = SM_NO_PARENT, .on_enter = NULL, .on_exit = NULL};
 
-    return sm_register_state(sm, &dummy_hdl, dummy_state);
+    SMStatus status = sm_register_state(sm, &dummy_hdl, dummy_state);
+
+    if (status != SM_OK) {
+        sm_destroy(sm);
+
+        return status;
+    }
+
+    *out = sm;
+
+    return SM_OK;
 }
 
 void sm_destroy(SM* sm) {
@@ -84,6 +93,12 @@ void sm_destroy(SM* sm) {
 
     free(sm->transitions);
     sm->transitions = NULL;
+
+    sm->states_size = 0;
+    sm->states_len = 0;
+    sm->transitions_size = 0;
+    sm->transitions_len = 0;
+    sm->state_hdl = 0;
 
     free(sm);
 }
@@ -118,7 +133,7 @@ SMStatus sm_handle(SM* sm, int e, void* args) {
 
         handled = status == HS_HANDLED;
 
-        if (handled || s->parent_hdl == NO_PARENT) {
+        if (handled || s->parent_hdl == SM_NO_PARENT) {
             break;
         }
 
@@ -139,13 +154,13 @@ SMStatus sm_set_state(SM* sm, SMStateHdl hdl) {
         return SM_INVALID_STATE;
     }
 
-    if (exit_state(sm, &sm->states[sm->state_hdl])) {
+    if (exit_state(sm, sm->state_hdl)) {
         return SM_ERROR;
     }
 
     sm->state_hdl = hdl;
 
-    return enter_state(sm, &sm->states[hdl]) ? SM_ERROR : SM_OK;
+    return enter_state(sm, hdl) ? SM_ERROR : SM_OK;
 }
 
 SMStatus sm_add_transition(SM* sm, SMTransition trans) {
@@ -171,29 +186,29 @@ const char* sm_status_str(SMStatus status) {
     }
 }
 
-static int enter_state(SM* sm, SMState* state) {
-    for (int i = ancestor_count(sm, state); i > 0; i--) {
-        int status = get_ancestor(sm, state, i)->on_enter();
+static int enter_state(SM* sm, SMStateHdl state_hdl) {
+    for (int i = ancestor_count(sm, state_hdl); i > 0; i--) {
+        int status = get_ancestor(sm, state_hdl, i)->on_enter();
 
         if (status) {
             return status;
         }
     }
 
-    return state->on_enter();
+    return sm->states[state_hdl].on_enter();
 }
 
-static int exit_state(SM* sm, SMState* state) {
-    int status = state->on_exit();
+static int exit_state(SM* sm, SMStateHdl state_hdl) {
+    int status = sm->states[state_hdl].on_exit();
 
     if (status) {
         return status;
     }
 
-    size_t ancestors = ancestor_count(sm, state);
+    size_t ancestors = ancestor_count(sm, state_hdl);
 
     for (size_t i = 0; i < ancestors; i++) {
-        if ((status = get_ancestor(sm, state, i)->on_exit())) {
+        if ((status = get_ancestor(sm, state_hdl, i)->on_exit())) {
             return status;
         }
     }
@@ -201,9 +216,9 @@ static int exit_state(SM* sm, SMState* state) {
     return 0;
 }
 
-static size_t ancestor_count(SM* sm, SMState* state) {
+static size_t ancestor_count(SM* sm, SMStateHdl state_hdl) {
     size_t ancestors = 0;
-    SMState* s = state;
+    SMState* s = &sm->states[state_hdl];
 
     while (s->parent_hdl) {
         ancestors++;
@@ -213,7 +228,9 @@ static size_t ancestor_count(SM* sm, SMState* state) {
     return ancestors;
 }
 
-static SMState* get_ancestor(SM* sm, SMState* state, size_t n) {
+static SMState* get_ancestor(SM* sm, SMStateHdl state_hdl, size_t n) {
+    SMState* state = &sm->states[state_hdl];
+
     if (!state->parent_hdl) {
         return NULL;
     }
@@ -238,8 +255,8 @@ static SMTransition* lookup_trans(SM* sm, SMStateHdl state_hdl, int e) {
 
     SMState* s = &sm->states[state_hdl];
 
-    return (s->parent_hdl == NO_PARENT) ? NULL 
-                                        : lookup_trans(sm, s->parent_hdl, e);
+    return (s->parent_hdl == SM_NO_PARENT) ? NULL 
+                                           : lookup_trans(sm, s->parent_hdl, e);
 }
 
 static bool valid_transition(SM* sm, SMTransition* trans) {

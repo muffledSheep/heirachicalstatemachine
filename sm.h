@@ -8,20 +8,22 @@ typedef unsigned SMStateHdl;
 typedef struct SMTransition SMTransition;
 typedef struct SMState SMState;
 typedef struct SMConfig SMConfig;
+typedef enum SMStatus SMStatus;
+typedef enum SMEventHandlerStatus SMEventHandlerStatus;
 
-typedef enum SMStatus {
+enum SMStatus {
     SM_OK                 = 0,
     SM_ERROR              = -1,
     SM_INVALID_TRANSITION = -2,
     SM_INVALID_STATE      = -3,
     SM_UNHANDLED_EVENT    = -4,
-} SMStatus;
+};
 
-typedef enum SMEventHandlerStatus {
+enum SMEventHandlerStatus {
     HS_ERROR     = -1,
     HS_HANDLED   = 0,
     HS_UNHANDLED = 1
-} SMEventHandlerStatus;
+};
 
 typedef SMEventHandlerStatus (*SMEventHandler)(int, void*);
 
@@ -34,8 +36,8 @@ struct SMTransition {
 struct SMState {
     SMEventHandler handler;
     SMStateHdl parent_hdl;
-    SMStatus (*on_enter)(void);
-    SMStatus (*on_exit)(void);
+    int (*on_enter)(void);
+    int (*on_exit)(void);
 };
 
 struct SMConfig {
@@ -44,9 +46,9 @@ struct SMConfig {
     size_t init_transitions_size;
 };
 
-SM* sm_create(void);
+enum { SM_NO_PARENT = 0 };
 
-SMStatus sm_init(SM*, SMConfig);
+SMStatus sm_create(SM**, SMConfig);
 
 void sm_destroy(SM*);
 

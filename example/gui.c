@@ -25,7 +25,9 @@ enum {
     LIGHT_OPACITY     = 128,
     LIGHT_OPACITY_ALT = 16,
     WIN_WIDTH         = 2 * LIGHT_RAD + 2 * LIGHT_HGAP,
-    WIN_HEIGHT        = LIGHT_VGAP + LIGHTS_SIZE * (2 * LIGHT_RAD + LIGHT_VGAP)
+    WIN_HEIGHT        = LIGHT_VGAP + LIGHTS_SIZE * (2 * LIGHT_RAD + LIGHT_VGAP),
+    ON_KEY            = '1',
+    OFF_KEY           = '0'
 };
 
 static void init(void);
@@ -66,8 +68,8 @@ void handle_event(SDL_Event e) {
         running = false;
     } else if (e.type == SDL_KEYDOWN) {
         switch (e.key.keysym.sym) {
-            case 'a': lights_turn_on(); break;
-            case 'd': lights_turn_off(); break;
+            case ON_KEY:  lights_turn_on(); break;
+            case OFF_KEY: lights_turn_off(); break;
         }
     }
 }

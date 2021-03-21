@@ -1,3 +1,37 @@
+/* 
+Keyboard Controls:    
+    0 - Turn lights off.
+    1 - Turn lights on.
+
+States:
+    ON:
+        ERROR
+        RED
+        RED-AMBER
+        AMBER
+        GREEN
+    OFF
+
+Events:
+    Name      Args
+    =================================
+    Turn-On   N/A
+    Turn-Off  N/A 
+    Error     (error type; cause)
+    Change    (delay in microseconds)
+
+Transitions:
+    From       On        To
+    ==============================
+    OFF        Turn-On   RED
+    ON         Error     ERROR
+    ON         Turn-Off  OFF
+    RED        Change    RED-AMBER
+    RED-AMBER  Change    GREEN
+    GREEN      Change    AMBER
+    AMBER      Change    RED
+*/
+
 #define _DEFAULT_SOURCE
 
 #include <stdlib.h>
@@ -12,9 +46,12 @@
 #include "utils.h"
 #include "gui.h"
 
-typedef enum LightEvent { TURN_ON, TURN_OFF, ERROR, CHANGE } LightEvent;
-typedef enum LightErrorType { POWER_FAILURE, FAULT } LightErrorType;
+typedef enum LightEvent LightEvent;
+typedef enum LightErrorType LightErrorType;
 typedef struct LightError LightError;
+
+enum LightEvent { TURN_ON, TURN_OFF, ERROR, CHANGE };
+enum LightErrorType { POWER_FAILURE, FAULT };
 
 struct LightError {
     LightErrorType type;
@@ -71,6 +108,8 @@ int main(int argc, const char** argv) {
     gui_destroy();
     stop_lights_cycle();
     sm_destroy(sm);
+
+    return EXIT_SUCCESS;
 }
 
 static void report_error(LightError* err) {
@@ -111,7 +150,7 @@ static void* lights_cycle(void* _) {
         useconds_t delay_usec = 500000;
         CHECK(sm_handle(sm, CHANGE, (void*)delay_usec));
     
-        enum { PCT_ERR_RATE = 10 };
+        enum { PCT_ERR_RATE = 5 };
 
         if ((rand() % 100) <= PCT_ERR_RATE) {
             LightError err = (rand() % 2 == 1)
@@ -133,18 +172,16 @@ void lights_turn_off(void) {
 }
 
 static void register_states(void) {
-    enum { NO_PARENT = 0 };
-
     CHECK(sm_register_state(sm, &st_on, (SMState) {
         .handler    = (SMEventHandler)on_handler,
-        .parent_hdl = NO_PARENT,
+        .parent_hdl = SM_NO_PARENT,
         .on_enter   = enter_on,
         .on_exit    = NULL
     }));
 
     CHECK(sm_register_state(sm, &st_off, (SMState) {
         .handler    = (SMEventHandler)off_handler,
-        .parent_hdl = NO_PARENT,
+        .parent_hdl = SM_NO_PARENT,
         .on_enter   = enter_off,
         .on_exit    = NULL
     }));
@@ -230,13 +267,7 @@ void add_transitions(void) {
 }
     
 static void init_sm(void) {
-    sm = sm_create();
-
-    if (sm == NULL) {
-        DIE("Memory error\n");
-    }
-
-    CHECK(sm_init(sm, (SMConfig) {
+    CHECK(sm_create(&sm, (SMConfig) {
         .ignore_unhandled_events = false, 
         .init_states_size        = 5, 
         .init_transitions_size   = 5

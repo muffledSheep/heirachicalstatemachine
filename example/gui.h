@@ -2,7 +2,9 @@
 
 #include <stdbool.h>
 
-typedef enum GUILight { RED, AMBER, GREEN } GUILight;
+typedef enum GUILight GUILight;
+
+enum GUILight { RED, AMBER, GREEN };
 
 void gui_mainloop(void);
 
