@@ -40,9 +40,9 @@ static SDL_Window* win = NULL;
 static SDL_Renderer* ren = NULL;
 static bool running = false;
 static Light lights[LIGHTS_SIZE] = {
-    (Light) {.on = false, .r = 255, .g = 0,   .b = 0},
-    (Light) {.on = false, .r = 255, .g = 191, .b = 0},
-    (Light) {.on = false, .r = 0,   .g = 255, .b = 0}
+    {.on = false, .r = 255, .g = 0,   .b = 0},
+    {.on = false, .r = 255, .g = 191, .b = 0},
+    {.on = false, .r = 0,   .g = 255, .b = 0}
 };
 
 void gui_mainloop(void) {

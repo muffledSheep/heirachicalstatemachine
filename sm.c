@@ -64,8 +64,7 @@ SMStatus sm_create(SM** out, SMConfig cfg) {
     sm->transitions = malloc(sizeof(*sm->transitions) * sm->transitions_size);
 
     if (!sm->transitions) {
-        free(sm->states);
-        sm->states = NULL;
+        sm_destroy(sm);
 
         return SM_ERROR;
     }
@@ -88,11 +87,15 @@ SMStatus sm_create(SM** out, SMConfig cfg) {
 }
 
 void sm_destroy(SM* sm) {
-    free(sm->states);
-    sm->states = NULL;
+    if (sm->states) {
+        free(sm->states);
+        sm->states = NULL;
+    }
 
-    free(sm->transitions);
-    sm->transitions = NULL;
+    if (sm->transitions) {
+        free(sm->transitions);
+        sm->transitions = NULL;
+    }
 
     sm->states_size = 0;
     sm->states_len = 0;
